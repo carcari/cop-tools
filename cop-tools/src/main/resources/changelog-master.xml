@@ -1,0 +1,32 @@
+<?xml version="1.1" encoding="UTF-8" standalone="no"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:ext="http://www.liquibase.org/xml/ns/dbchangelog-ext" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog-ext http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-ext.xsd http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.5.xsd">
+    <changeSet author="carcari (generated)" id="1520619980020-1">
+        <createTable tableName="download_startdate">
+            <column name="startdate" type="_TIMESTAMP(29, 6)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="source" type="VARCHAR(31)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+    <changeSet author="carcari (generated)" id="1520619980020-2">
+        <createTable tableName="products">
+            <column name="id" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="name" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="VARCHAR(31)"/>
+            <column name="download_startdate" type="_TIMESTAMP(29, 6)"/>
+            <column name="download_enddate" type="_TIMESTAMP(29, 6)"/>
+        </createTable>
+    </changeSet>
+    <changeSet author="carcari (generated)" id="1520619980020-3">
+        <addPrimaryKey columnNames="startdate, source" constraintName="download_startdate_pkey" tableName="download_startdate"/>
+    </changeSet>
+    <changeSet author="carcari (generated)" id="1520619980020-4">
+        <addPrimaryKey columnNames="id, name" constraintName="products_pkey" tableName="products"/>
+    </changeSet>
+</databaseChangeLog>

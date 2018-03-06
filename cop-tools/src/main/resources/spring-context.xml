@@ -10,8 +10,8 @@
     <context:component-scan base-package="eu.serco.tools"/>
     <context:property-placeholder location="classpath:downloader.properties" />
 
-    <bean id="downloaderBean" class="eu.serco.tools.Downloader">
+    <!--<bean id="downloaderBean" class="eu.serco.tools.Downloader">
         <property name="appname" value="Copernicus Downloader" />
-    </bean>
+    </bean>-->
 
 </beans>

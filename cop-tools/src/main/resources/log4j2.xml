@@ -4,14 +4,27 @@
         <Console name="Console" target="SYSTEM_OUT">
             <PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n" />
         </Console>
-        <File name="MyFile" fileName="downloader-%d{yyy-MM-dd}.log" immediateFlush="false" append="false">
+        <!--<File name="RollingFile" fileName="downloader.log" filePattern="downloader-%d{yyyy-MM-dd-HH}.log"
+                     immediateFlush="false" append="false">
             <PatternLayout pattern="%d{yyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n"/>
-        </File>
+        </File>-->
+        <RollingFile name="RollingFile" fileName="downloader.log"
+                     filePattern="downloader-%d{yyyy-MM-dd-HH}.log">
+            <PatternLayout>
+                <Pattern>%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n</Pattern>
+            </PatternLayout>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="6" modulate="true" />
+            </Policies>
+            <Filters>
+                <ThresholdFilter level="DEBUG"/>
+            </Filters>
+        </RollingFile>
     </Appenders>
     <Loggers>
         <Root level="debug">
             <AppenderRef ref="Console" />
-            <AppenderRef ref="MyFile"/>
+            <AppenderRef ref="RollingFile"/>
         </Root>
     </Loggers>
 </Configuration>
