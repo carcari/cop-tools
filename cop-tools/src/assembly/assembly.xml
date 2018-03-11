@@ -4,14 +4,29 @@
     <!-- TODO: a jarjar format would be better -->
     <id>jar-with-dependencies</id>
     <formats>
-        <format>jar</format>
+        <format>zip</format>
+       <!--<format>jar</format>-->
     </formats>
     <includeBaseDirectory>false</includeBaseDirectory>
+
+    <files>
+        <file>
+            <source>src/main/resources/application.properties</source>
+            <outputDirectory>conf</outputDirectory>
+            <filtered>true</filtered>
+        </file>
+        <file>
+            <source>src/main/resources/log4j2.xml</source>
+            <outputDirectory>conf</outputDirectory>
+            <filtered>true</filtered>
+        </file>
+    </files>
+
     <dependencySets>
         <dependencySet>
-            <outputDirectory>/</outputDirectory>
+            <outputDirectory>lib</outputDirectory>
             <useProjectArtifact>true</useProjectArtifact>
-            <unpack>true</unpack>
+            <unpack>false</unpack>
             <scope>runtime</scope>
         </dependencySet>
     </dependencySets>
