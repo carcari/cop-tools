@@ -33,11 +33,11 @@
             <version>${spring-boot.version}</version>
         </dependency>
 
-        <!--<dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
             <version>${spring-boot.version}</version>
-        </dependency>-->
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -74,7 +74,7 @@
         </dependency>
 
         <!-- PostgreSQL Driver-->
-        <!--<dependency>
+        <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <version>9.4.1212</version>
@@ -85,10 +85,12 @@
                 </exclusion>
             </exclusions>
         </dependency>
+
+        <!-- Liquibase-->
         <dependency>
             <groupId>org.liquibase</groupId>
             <artifactId>liquibase-core</artifactId>
-        </dependency>-->
+        </dependency>
 
 
     </dependencies>

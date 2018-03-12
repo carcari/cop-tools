@@ -1,16 +1,15 @@
 package eu.serco.tools;
 
 import com.sun.org.apache.xerces.internal.impl.dv.util.Base64;
+import eu.serco.tools.data.DownloadProduct;
 import eu.serco.tools.data.Product;
 import eu.serco.tools.data.dhus.opensearch.Entry;
 import eu.serco.tools.data.dhus.opensearch.EntryDate;
 import eu.serco.tools.data.dhus.opensearch.Results;
 import eu.serco.tools.swift.StorageAccount;
-import org.apache.http.HttpEntity;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.conn.ssl.TrustStrategy;
 import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -19,12 +18,10 @@ import org.javaswift.joss.model.Container;
 import org.javaswift.joss.model.StoredObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -32,8 +29,6 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLException;
-import javax.net.ssl.SSLSocketFactory;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -44,10 +39,14 @@ import java.security.KeyManagementException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.X509Certificate;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class DHuSProductDownloader {
@@ -56,6 +55,9 @@ public class DHuSProductDownloader {
 
     @Autowired
     private RestTemplateBuilder templateBuilder;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
 
 
     @Autowired
@@ -84,7 +86,7 @@ public class DHuSProductDownloader {
 
     private static final int BUFFER_SIZE = 4096;
 
-    private static final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss");
+    private static final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("YYYY-MM-DD HH:mm:ss");//yyyy-mm-dd hh:mm:ss[.fffffffff]
 
     public void getProducts() throws IOException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
 
@@ -107,9 +109,16 @@ public class DHuSProductDownloader {
 
         RestTemplate template = templateBuilder.requestFactory(requestFactory).basicAuthorization(username,password).build();
         //RestTemplate template = templateBuilder.basicAuthorization(username,password).build();
-        String query = baseUrl + "search?q=beginposition:["+startdate+"T00:00:00.000Z TO NOW]&format=json&start=0&rows="+maxrows+"&orderby=beginposition asc";
+        String sqlSelect = "SELECT startdate\n" +
+                "\tFROM dias.download_start_date LIMIT 1;";
+        //get start date
+        String startDate =  jdbcTemplate.queryForObject(sqlSelect, String.class);
+        logger.info("Product list start date is:  " + startDate);
+        String beginPosition = (startDate != null) ? startDate : startdate;
+
+        String query = baseUrl + "search?q=beginposition:["+beginPosition+" TO NOW]&format=json&start=0&rows="+maxrows+"&orderby=beginposition asc";
         logger.debug("query: "+ query);
-        List<Product> productsToDownload = new ArrayList<>();
+
 
         ResponseEntity<Results> response = template.exchange(query, HttpMethod.GET,null, Results.class);
         Results entity = response.getBody();
@@ -117,6 +126,14 @@ public class DHuSProductDownloader {
         logger.debug("entity.feed is " + entity.feed);
         logger.debug("entity.feed.totalresults is " + entity.feed.totalresults);
         logger.debug("entity.feed.entries is " + entity.feed.entries);
+
+        String sqlInsert = "INSERT INTO dias.download_products(\n" +
+                "\tid, name, status, source, mission, begin_position, sensing_date)\n" +
+                "\tVALUES (?, ?, ?, ?, ?, ?, ?);";
+        String sqlUpate = "UPDATE dias.download_start_date\n" +
+                "\tSET startdate=?\n" +
+                "\tWHERE source='DHUS';";
+        String lastBeginPosition=beginPosition;
         try {
             if(entity != null && entity.feed != null && entity.feed.entries != null) {
                 for (Entry entry : entity.feed.entries) {
@@ -127,24 +144,36 @@ public class DHuSProductDownloader {
 
                     for (EntryDate date : entry.dates) {
                         if (date.name.equalsIgnoreCase("beginposition")) {
+                            lastBeginPosition = date.content;
                             p.setBeginposition(date.content.substring(0, 7));
                             break;
                         }
                     }
+                    SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss.SSS");
+                    Date parsedDate = dateFormat.parse(lastBeginPosition);
+                    Timestamp timestamp = new java.sql.Timestamp(parsedDate.getTime());
                     p.setDownloadUrl(baseUrl + "odata/v1/Products('" + p.getUuid() + "')/$value");
-                    productsToDownload.add(p);
+                    try {
 
+                        jdbcTemplate.update(sqlInsert, p.getUuid(), p.getIdentifier(), null,
+                                "DHUS", p.getMission(), p.getBeginposition(), timestamp);
+                    } catch(Exception e) {
+                        logger.error("Error adding product to download_products table: ", e.getMessage());
+                        e.printStackTrace();
+                    }
 
                 }
-                Account account = storageAccount.createAccount();
+                jdbcTemplate.update(sqlUpate, lastBeginPosition);
+                /*Account account = storageAccount.createAccount();
                 for (Product product : productsToDownload) {
                     uploadFileOnStorage(product, account);
-                }
+                }*/
             } else {
                 logger.warn("No products found ");
             }
         } catch (Exception e) {
-            logger.error("Error occurred getting products");
+            logger.error("Error occurred getting products", e.getMessage());
+            e.printStackTrace();
         }
 
     }
@@ -214,9 +243,30 @@ public class DHuSProductDownloader {
         httpConn.disconnect();
     }
 
-    @Scheduled(cron = "${downloader.scheduling.cron}")
-    public void testScheduler() throws IOException {
-        logger.info("Fixed Rate Task with Initial Delay :: Execution Time - {}", dateTimeFormatter.format(LocalDateTime.now()));
+    @Scheduled(fixedRateString = "${downloader.scheduling.rate}", initialDelay = 1)
+    public void downloadScheduler() throws IOException {
+        logger.info("Starting downloadScheduler execution at: " + dateTimeFormatter.format(LocalDateTime.now()));
+        String sqlSelect = "SELECT id, name, mission, begin_position FROM download_products where status is null order by sensing_date LIMIT 10 FOR UPDATE;";
+        String sqlUpdate = "UPDATE download_products set status='PROCESSING' WHERE id = ?";
+        //Map<String,Object> products = jdbcTemplate.queryForMap(sqlSelect);
+        List<Map<String, Object>> products = jdbcTemplate.queryForList(sqlSelect);
+        logger.info("retrieved products: " + products);
+        for (Map<String, Object> row : products) {
+            jdbcTemplate.update(sqlUpdate, row.get("id"));
+        }
+
+
+        Account account = storageAccount.createAccount();
+        for (Map<String, Object> row : products) {
+            DownloadProduct p = new DownloadProduct();
+            p.setId(row.get("id").toString());
+            p.setBeginPosition(row.get("begin_position").toString());
+            p.setMission(row.get("mission").toString());
+            p.setName(row.get("id").toString());
+            uploadFileOnStorage(p, account);
+        }
+
+
     }
 
     /*@Scheduled(cron = "${downloader.scheduling.cron2}")
@@ -229,10 +279,11 @@ public class DHuSProductDownloader {
      * Downloads a file from a given URL
      * @throws IOException
      */
-    public void uploadFileOnStorage(Product product, Account account)
+    public void uploadFileOnStorage(DownloadProduct product, Account account)
             throws IOException {
-        URL url = new URL(product.getDownloadUrl());
-        logger.info("property url is: " + product.getDownloadUrl());
+        String productUrl=baseUrl + "odata/v1/Products('" + product.getId() + "')/$value";
+        URL url = new URL(productUrl);
+        logger.info("property url is: " + productUrl);
 
         HttpURLConnection httpConn = (HttpURLConnection) url.openConnection();
         String userpass = username + ":" + password;
@@ -257,10 +308,10 @@ public class DHuSProductDownloader {
                 }
             } else {
                 // extracts file name from URL
-                fileName = product.getDownloadUrl().substring(product.getDownloadUrl().lastIndexOf("/") + 1,
-                        product.getDownloadUrl().length());
+                fileName = productUrl.substring(productUrl.lastIndexOf("/") + 1,
+                        productUrl.length());
             }
-            String containerName = (containerFormat.equalsIgnoreCase("dotted")) ? product.getMission() + "-"+product.getBeginposition() : product.getMission();
+            String containerName = (containerFormat.equalsIgnoreCase("dotted")) ? product.getMission() + "-"+product.getBeginPosition() : product.getMission();
             logger.debug("Content-Type = " + contentType);
             logger.debug("Content-Disposition = " + disposition);
             logger.debug("Content-Length = " + contentLength);
@@ -275,7 +326,7 @@ public class DHuSProductDownloader {
             //Create Object
 
             String objName = (containerFormat.equalsIgnoreCase("dotted")) ? fileName
-                    : product.getBeginposition().substring(0,4) + "/" + product.getBeginposition().substring(5,7) + "/" + fileName;
+                    : product.getBeginPosition().substring(0,4) + "/" + product.getBeginPosition().substring(5,7) + "/" + fileName;
             StoredObject obj = container.getObject(objName);
             //upload object on storage
             if(!obj.exists())

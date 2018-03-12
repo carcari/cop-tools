@@ -9,6 +9,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.io.IOException;
+import java.security.KeyManagementException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -59,8 +62,35 @@ public class DownloaderInit implements CommandLineRunner {
             //dhusDownloader.downloadFile();
 
             System.out.println("Starting execution at " + dateTimeFormatter.format(LocalDateTime.now()));
-            dhusDownloader.testScheduler();
-            dhusDownloader.getProducts();
+            Runnable runnable = new Runnable() {
+                public void run() {
+                    while (true) {
+                        // ------- code for task to run
+                        try {
+                            dhusDownloader.getProducts();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        } catch (NoSuchAlgorithmException e) {
+                            e.printStackTrace();
+                        } catch (KeyStoreException e) {
+                            e.printStackTrace();
+                        } catch (KeyManagementException e) {
+                            e.printStackTrace();
+                        }
+                        // ------- ends here
+                        try {
+                            Thread.sleep(10000);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            };
+            Thread thread = new Thread(runnable);
+            thread.start();
+
+
+            dhusDownloader.downloadScheduler();
             //dhusDownloader.testStorage();
         } catch (IOException ex) {
             ex.printStackTrace();
