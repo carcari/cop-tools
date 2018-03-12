@@ -24,6 +24,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import org.springframework.web.client.RestTemplate;
@@ -42,6 +44,8 @@ import java.security.KeyManagementException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.X509Certificate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -57,10 +61,10 @@ public class DHuSProductDownloader {
     @Autowired
     private StorageAccount storageAccount;
 
-    @Value("${dhus.product.downloader.username}")
+    @Value("${dhus.product.downloader.username:test}")
     private String username;
 
-    @Value("${dhus.product.downloader.password}")
+    @Value("${dhus.product.downloader.password:test}")
     private String password;
 
     @Value("${dhus.product.downloader.target.root}")
@@ -80,6 +84,7 @@ public class DHuSProductDownloader {
 
     private static final int BUFFER_SIZE = 4096;
 
+    private static final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     public void getProducts() throws IOException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
 
@@ -112,30 +117,34 @@ public class DHuSProductDownloader {
         logger.debug("entity.feed is " + entity.feed);
         logger.debug("entity.feed.totalresults is " + entity.feed.totalresults);
         logger.debug("entity.feed.entries is " + entity.feed.entries);
-        if(entity != null && entity.feed != null && entity.feed.entries != null) {
-            for (Entry entry : entity.feed.entries) {
-                Product p = new Product();
-                p.setIdentifier(entry.title);
-                p.setMission(entry.title.substring(0, 3));
-                p.setUuid(entry.id);
+        try {
+            if(entity != null && entity.feed != null && entity.feed.entries != null) {
+                for (Entry entry : entity.feed.entries) {
+                    Product p = new Product();
+                    p.setIdentifier(entry.title);
+                    p.setMission(entry.title.substring(0, 3));
+                    p.setUuid(entry.id);
 
-                for (EntryDate date : entry.dates) {
-                    if (date.name.equalsIgnoreCase("beginposition")) {
-                        p.setBeginposition(date.content.substring(0, 7));
-                        break;
+                    for (EntryDate date : entry.dates) {
+                        if (date.name.equalsIgnoreCase("beginposition")) {
+                            p.setBeginposition(date.content.substring(0, 7));
+                            break;
+                        }
                     }
+                    p.setDownloadUrl(baseUrl + "odata/v1/Products('" + p.getUuid() + "')/$value");
+                    productsToDownload.add(p);
+
+
                 }
-                p.setDownloadUrl(baseUrl + "odata/v1/Products('" + p.getUuid() + "')/$value");
-                productsToDownload.add(p);
-
-
+                Account account = storageAccount.createAccount();
+                for (Product product : productsToDownload) {
+                    uploadFileOnStorage(product, account);
+                }
+            } else {
+                logger.warn("No products found ");
             }
-            Account account = storageAccount.createAccount();
-            for (Product product : productsToDownload) {
-                uploadFileOnStorage(product, account);
-            }
-        } else {
-            logger.warn("No products found ");
+        } catch (Exception e) {
+            logger.error("Error occurred getting products");
         }
 
     }
@@ -204,6 +213,17 @@ public class DHuSProductDownloader {
         }
         httpConn.disconnect();
     }
+
+    @Scheduled(cron = "${downloader.scheduling.cron}")
+    public void testScheduler() throws IOException {
+        logger.info("Fixed Rate Task with Initial Delay :: Execution Time - {}", dateTimeFormatter.format(LocalDateTime.now()));
+    }
+
+    /*@Scheduled(cron = "${downloader.scheduling.cron2}")
+    public void testAsynch() throws IOException, InterruptedException {
+        logger.info("Test Asynch call to method: " + LocalDateTime.now());
+
+    }*/
 
     /**
      * Downloads a file from a given URL

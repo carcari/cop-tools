@@ -6,8 +6,11 @@ import org.springframework.boot.Banner;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 /*public class DownloaderInit
 {
@@ -22,6 +25,7 @@ import java.io.IOException;
 }*/
 
 @SpringBootApplication
+@EnableScheduling
 public class DownloaderInit implements CommandLineRunner {
 
     @Autowired
@@ -41,6 +45,7 @@ public class DownloaderInit implements CommandLineRunner {
     public void run(String... args) throws Exception {
 
 
+        final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss");
 
         System.out.println("Input arguments length is: " + args.length);
 //        if(args.length < 2) {
@@ -52,6 +57,9 @@ public class DownloaderInit implements CommandLineRunner {
 //            System.out.println("First argument is: " + args[0]);
 //            System.out.println("Second argument is: " + args[1]);
             //dhusDownloader.downloadFile();
+
+            System.out.println("Starting execution at " + dateTimeFormatter.format(LocalDateTime.now()));
+            dhusDownloader.testScheduler();
             dhusDownloader.getProducts();
             //dhusDownloader.testStorage();
         } catch (IOException ex) {
