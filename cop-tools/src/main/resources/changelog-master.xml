@@ -31,7 +31,7 @@
             </not>
         </preConditions>
         <createTable tableName="download_start_date">
-            <column name="startdate" type="TIMESTAMP(6) WITHOUT TIME ZONE">
+            <column name="startdate" type="VARCHAR(31)">
                 <constraints nullable="false"/>
             </column>
             <column name="source" type="VARCHAR(31)">

@@ -2,6 +2,7 @@ package eu.serco.tools;
 
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.Banner;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
@@ -34,6 +35,9 @@ public class DownloaderInit implements CommandLineRunner {
     @Autowired
     private DHuSProductDownloader dhusDownloader;
 
+    @Value("${downloader.list.sleep:1000}")
+    private long wait;
+
     public static void main(String[] args) throws Exception {
 
         //disabled banner, don't want to see the spring logo
@@ -62,12 +66,15 @@ public class DownloaderInit implements CommandLineRunner {
             //dhusDownloader.downloadFile();
 
             System.out.println("Starting execution at " + dateTimeFormatter.format(LocalDateTime.now()));
+            // Clear pending products from database
+            dhusDownloader.checkPendingProducts();
             Runnable runnable = new Runnable() {
                 public void run() {
-                    while (true) {
+                    Boolean checkStatus=true;
+                    while (checkStatus) {
                         // ------- code for task to run
                         try {
-                            dhusDownloader.getProducts();
+                            checkStatus = dhusDownloader.getProducts();
                         } catch (IOException e) {
                             e.printStackTrace();
                         } catch (NoSuchAlgorithmException e) {
@@ -79,7 +86,7 @@ public class DownloaderInit implements CommandLineRunner {
                         }
                         // ------- ends here
                         try {
-                            Thread.sleep(10000);
+                            Thread.sleep(wait);
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         }

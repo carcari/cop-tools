@@ -79,7 +79,7 @@ public class DHuSProductDownloader {
     private String startdate;
 
     @Value("${dhus.product.downloader.maxrows:100}")
-    private String maxrows;
+    private int maxrows;
 
     @Value("${storage.container.object.format:dotted}")
     private String containerFormat;
@@ -88,8 +88,20 @@ public class DHuSProductDownloader {
 
     private static final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("YYYY-MM-DD HH:mm:ss");//yyyy-mm-dd hh:mm:ss[.fffffffff]
 
-    public void getProducts() throws IOException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
 
+    public void checkPendingProducts() {
+
+        try {
+            jdbcTemplate.update(" UPDATE dias.download_products set status=null where status='PROCESSING' and download_startdate is null");
+        } catch (Exception e ){
+            logger.error("Error clearing pending products " + e.getMessage());
+        }
+    }
+
+
+    public Boolean getProducts() throws IOException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+
+        Boolean hasProducts = true;
         TrustStrategy acceptingTrustStrategy = (X509Certificate[] chain, String authType) -> true;
 
         SSLContext sslContext = org.apache.http.ssl.SSLContexts.custom()
@@ -115,66 +127,81 @@ public class DHuSProductDownloader {
         String startDate =  jdbcTemplate.queryForObject(sqlSelect, String.class);
         logger.info("Product list start date is:  " + startDate);
         String beginPosition = (startDate != null) ? startDate : startdate;
+        int i=0;
+        String query;// = baseUrl + "search?q=beginposition:["+beginPosition+" TO NOW]&format=json&start="+i+"&rows="+maxrows+"&orderby=beginposition asc";
+        //logger.debug("query: "+ query);
 
-        String query = baseUrl + "search?q=beginposition:["+beginPosition+" TO NOW]&format=json&start=0&rows="+maxrows+"&orderby=beginposition asc";
-        logger.debug("query: "+ query);
-
-
-        ResponseEntity<Results> response = template.exchange(query, HttpMethod.GET,null, Results.class);
-        Results entity = response.getBody();
-        logger.debug("entity is " + entity);
+        while(hasProducts) {
+            query = baseUrl + "search?q=beginposition:["+beginPosition+" TO NOW]&format=json&start="+i*maxrows+"&rows="+maxrows+"&orderby=beginposition asc";
+            ResponseEntity<Results> response = template.exchange(query, HttpMethod.GET, null, Results.class);
+            Results entity = response.getBody();
+            logger.debug("query: "+ query);
+        /*logger.debug("entity is " + entity);
         logger.debug("entity.feed is " + entity.feed);
         logger.debug("entity.feed.totalresults is " + entity.feed.totalresults);
-        logger.debug("entity.feed.entries is " + entity.feed.entries);
+        logger.debug("entity.feed.entries is " + entity.feed.entries);*/
 
-        String sqlInsert = "INSERT INTO dias.download_products(\n" +
-                "\tid, name, status, source, mission, begin_position, sensing_date)\n" +
-                "\tVALUES (?, ?, ?, ?, ?, ?, ?);";
-        String sqlUpate = "UPDATE dias.download_start_date\n" +
-                "\tSET startdate=?\n" +
-                "\tWHERE source='DHUS';";
-        String lastBeginPosition=beginPosition;
-        try {
-            if(entity != null && entity.feed != null && entity.feed.entries != null) {
-                for (Entry entry : entity.feed.entries) {
-                    Product p = new Product();
-                    p.setIdentifier(entry.title);
-                    p.setMission(entry.title.substring(0, 3));
-                    p.setUuid(entry.id);
+            String sqlInsert = "INSERT INTO dias.download_products(\n" +
+                    "\tid, name, status, source, mission, begin_position, sensing_date)\n" +
+                    "\tVALUES (?, ?, ?, ?, ?, ?, ?::timestamp);";
+            String sqlUpate = "UPDATE dias.download_start_date\n" +
+                    "\tSET startdate=?\n" +
+                    "\tWHERE source='DHUS';";
+            String lastBeginPosition = beginPosition;
+            String shortBeginPosition = beginPosition.substring(0, 7);
+            String tsSensing = "";
+            try {
+                if (entity != null && entity.feed != null && entity.feed.entries != null) {
+                    for (Entry entry : entity.feed.entries) {
+                        //Product p = new Product();
+                        //p.setIdentifier(entry.title);
+                        //p.setMission(entry.title.substring(0, 3));
+                        //p.setUuid(entry.id);
 
-                    for (EntryDate date : entry.dates) {
-                        if (date.name.equalsIgnoreCase("beginposition")) {
-                            lastBeginPosition = date.content;
-                            p.setBeginposition(date.content.substring(0, 7));
-                            break;
+                        for (EntryDate date : entry.dates) {
+                            if (date.name.equalsIgnoreCase("beginposition")) {
+                                lastBeginPosition = date.content;
+                                shortBeginPosition = date.content.substring(0, 7);
+                                break;
+                            }
                         }
-                    }
-                    SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss.SSS");
-                    Date parsedDate = dateFormat.parse(lastBeginPosition);
-                    Timestamp timestamp = new java.sql.Timestamp(parsedDate.getTime());
-                    p.setDownloadUrl(baseUrl + "odata/v1/Products('" + p.getUuid() + "')/$value");
-                    try {
+                        tsSensing = lastBeginPosition.substring(0, 10) + " " + lastBeginPosition.substring(11, 19);
+                        //logger.debug("***** tsSensing is: " + tsSensing);
+                        //p.setDownloadUrl(baseUrl + "odata/v1/Products('" + p.getUuid() + "')/$value");
+                        try {
+                            int count = jdbcTemplate.queryForObject("SELECT count(*) from dias.download_products where id=? and name=?",
+                                    Integer.class, entry.id, entry.title);
+                            if (count == 0)
+                                jdbcTemplate.update(sqlInsert, entry.id, entry.title, null,
+                                        "DHUS", entry.title.substring(0, 3), shortBeginPosition, tsSensing);
+                            else
+                                logger.debug("product " + entry.title + " already present in dowloader list");
+                        } catch (Exception e) {
+                            logger.error("Error adding product to download_products table: ", e.getMessage());
+                            //e.printStackTrace();
+                        }
 
-                        jdbcTemplate.update(sqlInsert, p.getUuid(), p.getIdentifier(), null,
-                                "DHUS", p.getMission(), p.getBeginposition(), timestamp);
-                    } catch(Exception e) {
-                        logger.error("Error adding product to download_products table: ", e.getMessage());
-                        e.printStackTrace();
                     }
-
-                }
-                jdbcTemplate.update(sqlUpate, lastBeginPosition);
+                    jdbcTemplate.update(sqlUpate, lastBeginPosition);
                 /*Account account = storageAccount.createAccount();
                 for (Product product : productsToDownload) {
                     uploadFileOnStorage(product, account);
                 }*/
-            } else {
-                logger.warn("No products found ");
+                } else {
+                    logger.warn("No products found ");
+                    hasProducts = false;
+                    // restart check for new products at the end of the loop
+                    jdbcTemplate.update(sqlUpate, startdate);
+                    break;
+                }
+
+            } catch (Exception e) {
+                logger.error("Error occurred getting products", e.getMessage());
+                e.printStackTrace();
             }
-        } catch (Exception e) {
-            logger.error("Error occurred getting products", e.getMessage());
-            e.printStackTrace();
+            i++;
         }
+        return hasProducts;
 
     }
 
@@ -243,37 +270,28 @@ public class DHuSProductDownloader {
         httpConn.disconnect();
     }
 
-    @Scheduled(fixedRateString = "${downloader.scheduling.rate}", initialDelay = 1)
+    @Scheduled(fixedRateString = "${downloader.scheduling.rate}", initialDelay = 10000)
     public void downloadScheduler() throws IOException {
         logger.info("Starting downloadScheduler execution at: " + dateTimeFormatter.format(LocalDateTime.now()));
-        String sqlSelect = "SELECT id, name, mission, begin_position FROM download_products where status is null order by sensing_date LIMIT 10 FOR UPDATE;";
-        String sqlUpdate = "UPDATE download_products set status='PROCESSING' WHERE id = ?";
+        String sqlSelect = "SELECT id, name, mission, begin_position FROM download_products where status is null and source = 'DHUS'" +
+                " order by sensing_date  asc LIMIT 1 FOR UPDATE;";
+        //String sqlUpdate = "UPDATE download_products set status='PROCESSING' WHERE id = ? and name = ?";
         //Map<String,Object> products = jdbcTemplate.queryForMap(sqlSelect);
         List<Map<String, Object>> products = jdbcTemplate.queryForList(sqlSelect);
-        logger.info("retrieved products: " + products);
-        for (Map<String, Object> row : products) {
-            jdbcTemplate.update(sqlUpdate, row.get("id"));
-        }
-
-
+        logger.info("- downloadScheduler: retrieved #"+products.size()+" products");
         Account account = storageAccount.createAccount();
         for (Map<String, Object> row : products) {
+            //jdbcTemplate.update(sqlUpdate, row.get("id"), row.get("name"));
             DownloadProduct p = new DownloadProduct();
             p.setId(row.get("id").toString());
             p.setBeginPosition(row.get("begin_position").toString());
             p.setMission(row.get("mission").toString());
-            p.setName(row.get("id").toString());
+            p.setName(row.get("name").toString());
             uploadFileOnStorage(p, account);
         }
 
 
     }
-
-    /*@Scheduled(cron = "${downloader.scheduling.cron2}")
-    public void testAsynch() throws IOException, InterruptedException {
-        logger.info("Test Asynch call to method: " + LocalDateTime.now());
-
-    }*/
 
     /**
      * Downloads a file from a given URL
@@ -284,7 +302,8 @@ public class DHuSProductDownloader {
         String productUrl=baseUrl + "odata/v1/Products('" + product.getId() + "')/$value";
         URL url = new URL(productUrl);
         logger.info("property url is: " + productUrl);
-
+        String sqlStartUpdate = "UPDATE download_products set download_startdate=now(), status='PROCESSING' WHERE id = ? and name = ?";
+        String sqlEndUpdate = "UPDATE download_products set download_enddate=now(), status= ? WHERE id = ? and name = ?";
         HttpURLConnection httpConn = (HttpURLConnection) url.openConnection();
         String userpass = username + ":" + password;
         String basicAuth = "Basic " + new String(new Base64().encode(userpass.getBytes()));
@@ -329,12 +348,23 @@ public class DHuSProductDownloader {
                     : product.getBeginPosition().substring(0,4) + "/" + product.getBeginPosition().substring(5,7) + "/" + fileName;
             StoredObject obj = container.getObject(objName);
             //upload object on storage
-            if(!obj.exists())
-                obj.uploadObject(inputStream);
+            if(!obj.exists()) {
+                try {
+                    logger.info("Starting uploading object " + objName + " on storage");
+                    jdbcTemplate.update(sqlStartUpdate, product.getId(), product.getName());
+                    obj.uploadObject(inputStream);
+                    jdbcTemplate.update(sqlEndUpdate, "COMPLETED", product.getId(), product.getName());
+                } catch(Exception e) {
+                    logger.error("Error uploading object on storage: ",e);
+                }
+            } else {
+                jdbcTemplate.update(sqlEndUpdate, "COMPLETED", product.getId(), product.getName());
+                logger.info("File "+ fileName +" already present on storage");
+            }
 
             inputStream.close();
 
-            logger.info("File "+ fileName +" uploaded on storage");
+            //logger.info("File "+ fileName +" uploaded on storage");
         } else {
             logger.info("No file to download. Server replied HTTP code: " + responseCode);
         }
