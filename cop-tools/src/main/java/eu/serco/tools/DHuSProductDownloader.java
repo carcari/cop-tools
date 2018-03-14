@@ -2,7 +2,6 @@ package eu.serco.tools;
 
 import com.sun.org.apache.xerces.internal.impl.dv.util.Base64;
 import eu.serco.tools.data.DownloadProduct;
-import eu.serco.tools.data.Product;
 import eu.serco.tools.data.dhus.opensearch.Entry;
 import eu.serco.tools.data.dhus.opensearch.EntryDate;
 import eu.serco.tools.data.dhus.opensearch.Results;
@@ -39,12 +38,8 @@ import java.security.KeyManagementException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.X509Certificate;
-import java.sql.Timestamp;
-import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -99,7 +94,7 @@ public class DHuSProductDownloader {
     }
 
 
-    public Boolean getProducts() throws IOException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+    public Boolean getProducts() throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
 
         Boolean hasProducts = true;
         TrustStrategy acceptingTrustStrategy = (X509Certificate[] chain, String authType) -> true;
@@ -120,7 +115,6 @@ public class DHuSProductDownloader {
         requestFactory.setHttpClient(httpClient);
 
         RestTemplate template = templateBuilder.requestFactory(requestFactory).basicAuthorization(username,password).build();
-        //RestTemplate template = templateBuilder.basicAuthorization(username,password).build();
         String sqlSelect = "SELECT startdate\n" +
                 "\tFROM dias.download_start_date LIMIT 1;";
         //get start date
@@ -128,18 +122,14 @@ public class DHuSProductDownloader {
         logger.info("Product list start date is:  " + startDate);
         String beginPosition = (startDate != null) ? startDate : startdate;
         int i=0;
-        String query;// = baseUrl + "search?q=beginposition:["+beginPosition+" TO NOW]&format=json&start="+i+"&rows="+maxrows+"&orderby=beginposition asc";
-        //logger.debug("query: "+ query);
+        String query;
 
         while(hasProducts) {
             query = baseUrl + "search?q=beginposition:["+beginPosition+" TO NOW]&format=json&start="+i*maxrows+"&rows="+maxrows+"&orderby=beginposition asc";
             ResponseEntity<Results> response = template.exchange(query, HttpMethod.GET, null, Results.class);
             Results entity = response.getBody();
             logger.debug("query: "+ query);
-        /*logger.debug("entity is " + entity);
-        logger.debug("entity.feed is " + entity.feed);
-        logger.debug("entity.feed.totalresults is " + entity.feed.totalresults);
-        logger.debug("entity.feed.entries is " + entity.feed.entries);*/
+
 
             String sqlInsert = "INSERT INTO dias.download_products(\n" +
                     "\tid, name, status, source, mission, begin_position, sensing_date)\n" +
@@ -149,14 +139,11 @@ public class DHuSProductDownloader {
                     "\tWHERE source='DHUS';";
             String lastBeginPosition = beginPosition;
             String shortBeginPosition = beginPosition.substring(0, 7);
-            String tsSensing = "";
+            String tsSensing;
             try {
                 if (entity != null && entity.feed != null && entity.feed.entries != null) {
                     for (Entry entry : entity.feed.entries) {
-                        //Product p = new Product();
-                        //p.setIdentifier(entry.title);
-                        //p.setMission(entry.title.substring(0, 3));
-                        //p.setUuid(entry.id);
+
 
                         for (EntryDate date : entry.dates) {
                             if (date.name.equalsIgnoreCase("beginposition")) {
@@ -166,8 +153,6 @@ public class DHuSProductDownloader {
                             }
                         }
                         tsSensing = lastBeginPosition.substring(0, 10) + " " + lastBeginPosition.substring(11, 19);
-                        //logger.debug("***** tsSensing is: " + tsSensing);
-                        //p.setDownloadUrl(baseUrl + "odata/v1/Products('" + p.getUuid() + "')/$value");
                         try {
                             int count = jdbcTemplate.queryForObject("SELECT count(*) from dias.download_products where id=? and name=?",
                                     Integer.class, entry.id, entry.title);
@@ -177,16 +162,12 @@ public class DHuSProductDownloader {
                             else
                                 logger.debug("product " + entry.title + " already present in dowloader list");
                         } catch (Exception e) {
-                            logger.error("Error adding product to download_products table: ", e.getMessage());
-                            //e.printStackTrace();
+                            logger.trace("Error adding product to download_products table: ");
                         }
 
                     }
                     jdbcTemplate.update(sqlUpate, lastBeginPosition);
-                /*Account account = storageAccount.createAccount();
-                for (Product product : productsToDownload) {
-                    uploadFileOnStorage(product, account);
-                }*/
+
                 } else {
                     logger.warn("No products found ");
                     hasProducts = false;
@@ -207,7 +188,7 @@ public class DHuSProductDownloader {
 
 
     /**
-     * Downloads a file from a given URL
+     * Downloads a file locally from a given URL
      * @throws IOException
      */
     public void downloadFile(String productUrl)
@@ -263,25 +244,23 @@ public class DHuSProductDownloader {
             outputStream.close();
             inputStream.close();
 
-            System.out.println("File downloaded");
+            logger.debug("File downloaded");
         } else {
-            System.out.println("No file to download. Server replied HTTP code: " + responseCode);
+            logger.warn("No file to download. Server replied HTTP code: " + responseCode);
         }
         httpConn.disconnect();
     }
 
-    @Scheduled(fixedRateString = "${downloader.scheduling.rate}", initialDelay = 10000)
+    @Scheduled(fixedRateString = "${downloader.scheduling.rate}", initialDelay = 100)
     public void downloadScheduler() throws IOException {
         logger.info("Starting downloadScheduler execution at: " + dateTimeFormatter.format(LocalDateTime.now()));
         String sqlSelect = "SELECT id, name, mission, begin_position FROM download_products where status is null and source = 'DHUS'" +
                 " order by sensing_date  asc LIMIT 1 FOR UPDATE;";
-        //String sqlUpdate = "UPDATE download_products set status='PROCESSING' WHERE id = ? and name = ?";
-        //Map<String,Object> products = jdbcTemplate.queryForMap(sqlSelect);
         List<Map<String, Object>> products = jdbcTemplate.queryForList(sqlSelect);
         logger.info("- downloadScheduler: retrieved #"+products.size()+" products");
         Account account = storageAccount.createAccount();
         for (Map<String, Object> row : products) {
-            //jdbcTemplate.update(sqlUpdate, row.get("id"), row.get("name"));
+
             DownloadProduct p = new DownloadProduct();
             p.setId(row.get("id").toString());
             p.setBeginPosition(row.get("begin_position").toString());
@@ -301,7 +280,7 @@ public class DHuSProductDownloader {
             throws IOException {
         String productUrl=baseUrl + "odata/v1/Products('" + product.getId() + "')/$value";
         URL url = new URL(productUrl);
-        logger.info("property url is: " + productUrl);
+        logger.debug("property url is: " + productUrl);
         String sqlStartUpdate = "UPDATE download_products set download_startdate=now(), status='PROCESSING' WHERE id = ? and name = ?";
         String sqlEndUpdate = "UPDATE download_products set download_enddate=now(), status= ? WHERE id = ? and name = ?";
         HttpURLConnection httpConn = (HttpURLConnection) url.openConnection();
@@ -331,8 +310,8 @@ public class DHuSProductDownloader {
                         productUrl.length());
             }
             String containerName = (containerFormat.equalsIgnoreCase("dotted")) ? product.getMission() + "-"+product.getBeginPosition() : product.getMission();
-            logger.debug("Content-Type = " + contentType);
-            logger.debug("Content-Disposition = " + disposition);
+            //logger.debug("Content-Type = " + contentType);
+            //logger.debug("Content-Disposition = " + disposition);
             logger.debug("Content-Length = " + contentLength);
             logger.debug("fileName = " + fileName);
 
@@ -364,9 +343,10 @@ public class DHuSProductDownloader {
 
             inputStream.close();
 
-            //logger.info("File "+ fileName +" uploaded on storage");
+
         } else {
-            logger.info("No file to download. Server replied HTTP code: " + responseCode);
+            logger.warn("No file to download. Server replied HTTP code: " + responseCode +
+                    "\n Response message is: " + httpConn.getResponseMessage());
         }
         httpConn.disconnect();
     }

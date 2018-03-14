@@ -1,6 +1,7 @@
 package eu.serco.tools;
 
-
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.Banner;
@@ -16,21 +17,13 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
-/*public class DownloaderInit
-{
-    public static void main( String[] args )
-    {
-        ApplicationContext context = new ClassPathXmlApplicationContext("spring-context.xml");
-        Downloader downloader = (Downloader) context.getBean("downloaderBean");
-        downloader.printMessage();
 
-
-    }
-}*/
 
 @SpringBootApplication
 @EnableScheduling
 public class DownloaderInit implements CommandLineRunner {
+
+    final static Logger logger = LogManager.getLogger(DownloaderInit.class);
 
     @Autowired
     private DHuSProductDownloader dhusDownloader;
@@ -54,18 +47,10 @@ public class DownloaderInit implements CommandLineRunner {
 
         final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-        System.out.println("Input arguments length is: " + args.length);
-//        if(args.length < 2) {
-//            System.out.println("Usage: required input parameters are <downloadUrl> <targetDir>");
-//            return;
-//        }
 
         try {
-//            System.out.println("First argument is: " + args[0]);
-//            System.out.println("Second argument is: " + args[1]);
-            //dhusDownloader.downloadFile();
 
-            System.out.println("Starting execution at " + dateTimeFormatter.format(LocalDateTime.now()));
+            logger.info("Product Downloader STARTED at  " + dateTimeFormatter.format(LocalDateTime.now()));
             // Clear pending products from database
             dhusDownloader.checkPendingProducts();
             Runnable runnable = new Runnable() {
@@ -75,8 +60,6 @@ public class DownloaderInit implements CommandLineRunner {
                         // ------- code for task to run
                         try {
                             checkStatus = dhusDownloader.getProducts();
-                        } catch (IOException e) {
-                            e.printStackTrace();
                         } catch (NoSuchAlgorithmException e) {
                             e.printStackTrace();
                         } catch (KeyStoreException e) {
@@ -96,11 +79,10 @@ public class DownloaderInit implements CommandLineRunner {
             Thread thread = new Thread(runnable);
             thread.start();
 
-
             dhusDownloader.downloadScheduler();
-            //dhusDownloader.testStorage();
-        } catch (IOException ex) {
-            ex.printStackTrace();
+
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 }
