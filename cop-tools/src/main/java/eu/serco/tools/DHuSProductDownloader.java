@@ -116,9 +116,18 @@ public class DHuSProductDownloader {
 
         RestTemplate template = templateBuilder.requestFactory(requestFactory).basicAuthorization(username,password).build();
         String sqlSelect = "SELECT startdate\n" +
-                "\tFROM dias.download_start_date LIMIT 1;";
+                "\tFROM dias.download_start_date where source='DHUS' LIMIT 1;";
         //get start date
-        String startDate =  jdbcTemplate.queryForObject(sqlSelect, String.class);
+        String startDate = null;
+        try {
+            startDate = jdbcTemplate.queryForObject(sqlSelect, String.class);
+
+        } catch (Exception e) {
+            logger.error("No start date found, initialize table download_start_date...");
+            jdbcTemplate.update("INSERT INTO dias.download_start_date(\n" +
+                            "\tstartdate, source)\n" +
+                            "\tVALUES (?, ?);", startdate, "DHUS");
+        }
         logger.info("Product list start date is:  " + startDate);
         String beginPosition = (startDate != null) ? startDate : startdate;
         int i=0;
