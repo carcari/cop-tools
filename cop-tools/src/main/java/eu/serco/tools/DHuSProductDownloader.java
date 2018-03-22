@@ -261,7 +261,7 @@ public class DHuSProductDownloader {
         httpConn.disconnect();
     }
 
-    @Scheduled(fixedRateString = "${downloader.scheduling.rate}", initialDelay = 10)
+    @Scheduled(fixedRateString = "${downloader.scheduling.rate}", initialDelay = 5000)
     public void downloadScheduler() throws IOException {
         logger.info("Starting downloadScheduler execution at: " + dateTimeFormatter.format(LocalDateTime.now()));
         String sqlSelect = "SELECT id, name, mission, begin_position FROM download_products where status is null and source = 'DHUS'" +
