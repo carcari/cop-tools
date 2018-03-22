@@ -21,6 +21,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -260,7 +261,7 @@ public class DHuSProductDownloader {
         httpConn.disconnect();
     }
 
-    @Scheduled(fixedRateString = "${downloader.scheduling.rate}", initialDelay = 100)
+    @Scheduled(fixedRateString = "${downloader.scheduling.rate}", initialDelay = 10)
     public void downloadScheduler() throws IOException {
         logger.info("Starting downloadScheduler execution at: " + dateTimeFormatter.format(LocalDateTime.now()));
         String sqlSelect = "SELECT id, name, mission, begin_position FROM download_products where status is null and source = 'DHUS'" +
@@ -285,6 +286,7 @@ public class DHuSProductDownloader {
      * Downloads a file from a given URL
      * @throws IOException
      */
+    @Async
     public void uploadFileOnStorage(DownloadProduct product, Account account)
             throws IOException {
         String productUrl=baseUrl + "odata/v1/Products('" + product.getId() + "')/$value";
@@ -303,7 +305,7 @@ public class DHuSProductDownloader {
         if (responseCode == HttpURLConnection.HTTP_OK) {
             String fileName = "";
             String disposition = httpConn.getHeaderField("Content-Disposition");
-            String contentType = httpConn.getContentType();
+            //String contentType = httpConn.getContentType();
             int contentLength = httpConn.getContentLength();
 
             if (disposition != null) {

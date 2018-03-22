@@ -8,6 +8,7 @@ import org.springframework.boot.Banner;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.io.IOException;
@@ -21,6 +22,7 @@ import java.time.format.DateTimeFormatter;
 
 @SpringBootApplication
 @EnableScheduling
+@EnableAsync
 public class DownloaderInit implements CommandLineRunner {
 
     final static Logger logger = LogManager.getLogger(DownloaderInit.class);
@@ -30,6 +32,9 @@ public class DownloaderInit implements CommandLineRunner {
 
     @Value("${downloader.list.sleep:1000}")
     private long wait;
+
+    @Value("${downloader.list.nofill:false}")
+    private boolean nofill;
 
     public static void main(String[] args) throws Exception {
 
@@ -52,32 +57,34 @@ public class DownloaderInit implements CommandLineRunner {
 
             logger.info("Product Downloader STARTED at  " + dateTimeFormatter.format(LocalDateTime.now()));
             // Clear pending products from database
-            dhusDownloader.checkPendingProducts();
-            Runnable runnable = new Runnable() {
-                public void run() {
-                    Boolean checkStatus=true;
-                    while (checkStatus) {
-                        // ------- code for task to run
-                        try {
-                            checkStatus = dhusDownloader.getProducts();
-                        } catch (NoSuchAlgorithmException e) {
-                            e.printStackTrace();
-                        } catch (KeyStoreException e) {
-                            e.printStackTrace();
-                        } catch (KeyManagementException e) {
-                            e.printStackTrace();
-                        }
-                        // ------- ends here
-                        try {
-                            Thread.sleep(wait);
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
+            if(!nofill) {
+                dhusDownloader.checkPendingProducts();
+                Runnable runnable = new Runnable() {
+                    public void run() {
+                        Boolean checkStatus = true;
+                        while (checkStatus) {
+                            // ------- code for task to run
+                            try {
+                                checkStatus = dhusDownloader.getProducts();
+                            } catch (NoSuchAlgorithmException e) {
+                                e.printStackTrace();
+                            } catch (KeyStoreException e) {
+                                e.printStackTrace();
+                            } catch (KeyManagementException e) {
+                                e.printStackTrace();
+                            }
+                            // ------- ends here
+                            try {
+                                Thread.sleep(wait);
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
                         }
                     }
-                }
-            };
-            Thread thread = new Thread(runnable);
-            thread.start();
+                };
+                Thread thread = new Thread(runnable);
+                thread.start();
+            }
 
             dhusDownloader.downloadScheduler();
 

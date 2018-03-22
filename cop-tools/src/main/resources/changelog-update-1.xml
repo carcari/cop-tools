@@ -1,0 +1,22 @@
+<?xml version="1.1" encoding="UTF-8" standalone="no"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:ext="http://www.liquibase.org/xml/ns/dbchangelog-ext" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog-ext http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-ext.xsd http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.5.xsd">
+
+    <changeSet author="carcari (generated)" id="1521737751817-1">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <indexExists indexName="download_products_sensing_date_idx" tableName="download_products" schemaName="dias"/>
+            </not>
+        </preConditions>
+        <createIndex indexName="download_products_sensing_date_idx" tableName="download_products">
+            <column name="sensing_date"/>
+        </createIndex>
+    </changeSet>
+    <changeSet author="carcari (generated)" id="1521737751817-2">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <indexExists indexName="download_products_sensing_date_idx" tableName="download_products" schemaName="dias"/>
+            </not>
+        </preConditions>
+        <addNotNullConstraint columnDataType="timestamp(29,6)" columnName="sensing_date" tableName="download_products"/>
+    </changeSet>
+</databaseChangeLog>
