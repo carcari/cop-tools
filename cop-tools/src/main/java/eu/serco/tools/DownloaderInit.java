@@ -17,7 +17,9 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 
 @SpringBootApplication
@@ -27,8 +29,11 @@ public class DownloaderInit implements CommandLineRunner {
 
     final static Logger logger = LogManager.getLogger(DownloaderInit.class);
 
+    /*@Autowired
+    private DHuSProductDownloader dhusDownloader;*/
+
     @Autowired
-    private DHuSProductDownloader dhusDownloader;
+    private DHuSTest dhusTest;
 
     @Value("${downloader.list.sleep:1000}")
     private long wait;
@@ -57,38 +62,59 @@ public class DownloaderInit implements CommandLineRunner {
 
             logger.info("Product Downloader STARTED at  " + dateTimeFormatter.format(LocalDateTime.now()));
             // Clear pending products from database
-            if(!nofill) {
+            /*if(!nofill) {
                 dhusDownloader.checkPendingProducts();
-                Runnable runnable = new Runnable() {
-                    public void run() {
-                        Boolean checkStatus = true;
-                        while (checkStatus) {
-                            // ------- code for task to run
-                            try {
-                                checkStatus = dhusDownloader.getProducts();
-                            } catch (NoSuchAlgorithmException e) {
-                                e.printStackTrace();
-                            } catch (KeyStoreException e) {
-                                e.printStackTrace();
-                            } catch (KeyManagementException e) {
-                                e.printStackTrace();
-                            }
-                            // ------- ends here
-                            try {
-                                Thread.sleep(wait);
-                            } catch (InterruptedException e) {
-                                e.printStackTrace();
-                            }
+                Runnable runnable = () -> {
+
+                    Boolean checkStatus = true;
+                    while (checkStatus) {
+                        // ------- code for task to run
+                        try {
+                            checkStatus = dhusDownloader.getProducts();
+                        } catch (NoSuchAlgorithmException e) {
+                            e.printStackTrace();
+                        } catch (KeyStoreException e) {
+                            e.printStackTrace();
+                        } catch (KeyManagementException e) {
+                            e.printStackTrace();
+                        }
+                        // ------- ends here
+                        try {
+                            Thread.sleep(wait);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
                         }
                     }
+
                 };
                 Thread thread = new Thread(runnable);
                 thread.start();
             }
 
-            dhusDownloader.downloadScheduler();
+            dhusDownloader.downloadScheduler();*/
+            ScheduledExecutorService executor = Executors.newScheduledThreadPool(5);
 
-        } catch (IOException e) {
+            for(int i = 0; i< 3; i++) {
+                Runnable task = () -> {
+                    try {
+                        TimeUnit.SECONDS.sleep(2);
+                        dhusTest.getProducts();
+                    } catch (InterruptedException e) {
+                        System.err.println("task interrupted");
+                    } catch (NoSuchAlgorithmException e) {
+                        e.printStackTrace();
+                    } catch (KeyStoreException e) {
+                        e.printStackTrace();
+                    } catch (KeyManagementException e) {
+                        e.printStackTrace();
+                    }
+                };
+                executor.scheduleWithFixedDelay(task, 0, 1, TimeUnit.SECONDS);
+            }
+
+
+
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
