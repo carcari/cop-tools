@@ -88,7 +88,7 @@ public class DHuSProductDownloader {
     public void checkPendingProducts() {
 
         try {
-            jdbcTemplate.update(" UPDATE dias.download_products set status=null where status='PROCESSING' and download_startdate is null");
+            jdbcTemplate.update(" UPDATE download_products set status=null where status='PROCESSING' and download_startdate is null");
         } catch (Exception e ){
             logger.error("Error clearing pending products " + e.getMessage());
         }
@@ -117,7 +117,7 @@ public class DHuSProductDownloader {
 
         RestTemplate template = templateBuilder.requestFactory(requestFactory).basicAuthorization(username,password).build();
         String sqlSelect = "SELECT startdate\n" +
-                "\tFROM dias.download_start_date where source='DHUS' LIMIT 1;";
+                "\tFROM download_start_date where source='DHUS' LIMIT 1;";
         //get start date
         String startDate = null;
         try {
@@ -125,7 +125,7 @@ public class DHuSProductDownloader {
 
         } catch (Exception e) {
             logger.error("No start date found, initialize table download_start_date...");
-            jdbcTemplate.update("INSERT INTO dias.download_start_date(\n" +
+            jdbcTemplate.update("INSERT INTO download_start_date(\n" +
                             "\tstartdate, source)\n" +
                             "\tVALUES (?, ?);", startdate, "DHUS");
         }
@@ -141,10 +141,10 @@ public class DHuSProductDownloader {
             logger.debug("query: "+ query);
 
 
-            String sqlInsert = "INSERT INTO dias.download_products(\n" +
+            String sqlInsert = "INSERT INTO download_products(\n" +
                     "\tid, name, status, source, mission, begin_position, sensing_date)\n" +
                     "\tVALUES (?, ?, ?, ?, ?, ?, ?::timestamp);";
-            String sqlUpate = "UPDATE dias.download_start_date\n" +
+            String sqlUpate = "UPDATE download_start_date\n" +
                     "\tSET startdate=?\n" +
                     "\tWHERE source='DHUS';";
             String lastBeginPosition = beginPosition;
@@ -164,7 +164,7 @@ public class DHuSProductDownloader {
                         }
                         tsSensing = lastBeginPosition.substring(0, 10) + " " + lastBeginPosition.substring(11, 19);
                         try {
-                            int count = jdbcTemplate.queryForObject("SELECT count(*) from dias.download_products where id=? and name=?",
+                            int count = jdbcTemplate.queryForObject("SELECT count(*) from download_products where id=? and name=?",
                                     Integer.class, entry.id, entry.title);
                             if (count == 0)
                                 jdbcTemplate.update(sqlInsert, entry.id, entry.title, null,
@@ -344,6 +344,8 @@ public class DHuSProductDownloader {
                     jdbcTemplate.update(sqlStartUpdate, product.getId(), product.getName());
                     obj.uploadObject(inputStream);
                     jdbcTemplate.update(sqlEndUpdate, "COMPLETED", product.getId(), product.getName());
+                    logger.info("Object " + objName + " successfully uploaded on storage");
+
                 } catch(Exception e) {
                     logger.error("Error uploading object on storage: ",e);
                 }
