@@ -29,8 +29,8 @@ public class DownloaderInit implements CommandLineRunner {
 
     final static Logger logger = LogManager.getLogger(DownloaderInit.class);
 
-    /*@Autowired
-    private DHuSProductDownloader dhusDownloader;*/
+    @Autowired
+    private DHuSProductDownloader dhusDownloader;
 
     @Autowired
     private DHuSTest dhusTest;
@@ -62,7 +62,7 @@ public class DownloaderInit implements CommandLineRunner {
 
             logger.info("Product Downloader STARTED at  " + dateTimeFormatter.format(LocalDateTime.now()));
             // Clear pending products from database
-            /*if(!nofill) {
+            if(!nofill) {
                 dhusDownloader.checkPendingProducts();
                 Runnable runnable = () -> {
 
@@ -90,9 +90,34 @@ public class DownloaderInit implements CommandLineRunner {
                 Thread thread = new Thread(runnable);
                 thread.start();
             }
+            dhusDownloader.downloadScheduler();
 
-            dhusDownloader.downloadScheduler();*/
-            ScheduledExecutorService executor = Executors.newScheduledThreadPool(5);
+
+            //TEST ONLY BEGIN
+            /*ScheduledExecutorService executor = Executors.newScheduledThreadPool(5);
+
+            for(int i = 0; i< 3; i++) {
+                TimeUnit.SECONDS.sleep(2);
+                Runnable task = () -> {
+                    try {
+                        dhusDownloader.downloadScheduler();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                };
+                executor.schedule(task, 3000 * i, TimeUnit.MILLISECONDS);
+            }
+            try {
+                executor.awaitTermination(1, TimeUnit.DAYS);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+            executor.shutdown();*/
+
+
+
+            /*ScheduledExecutorService executor = Executors.newScheduledThreadPool(5);
 
             for(int i = 0; i< 3; i++) {
                 Runnable task = () -> {
@@ -109,8 +134,10 @@ public class DownloaderInit implements CommandLineRunner {
                         e.printStackTrace();
                     }
                 };
-                executor.scheduleWithFixedDelay(task, 0, 1, TimeUnit.SECONDS);
-            }
+                executor.scheduleAtFixedRate(task, 1000, 1000, TimeUnit.MILLISECONDS);
+            }*/
+
+            //TEST ONLY END
 
 
 

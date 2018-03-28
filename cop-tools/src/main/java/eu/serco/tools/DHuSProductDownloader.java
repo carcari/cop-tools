@@ -80,6 +80,9 @@ public class DHuSProductDownloader {
     @Value("${storage.container.object.format:dotted}")
     private String containerFormat;
 
+    @Value("${dhus.product.downloader.filter}")
+    private String queryFilter;
+
     private static final int BUFFER_SIZE = 4096;
 
     private static final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("YYYY-MM-DD HH:mm:ss");//yyyy-mm-dd hh:mm:ss[.fffffffff]
@@ -132,13 +135,17 @@ public class DHuSProductDownloader {
         logger.info("Product list start date is:  " + startDate);
         String beginPosition = (startDate != null) ? startDate : startdate;
         int i=0;
-        String query;
+        String queryUrl, query;
+
 
         while(hasProducts) {
-            query = baseUrl + "search?q=beginposition:["+beginPosition+" TO NOW]&format=json&start="+i*maxrows+"&rows="+maxrows+"&orderby=beginposition asc";
-            ResponseEntity<Results> response = template.exchange(query, HttpMethod.GET, null, Results.class);
+            query = (queryFilter !=null && !queryFilter.isEmpty()) ?
+                    "search?q=beginposition:["+beginPosition+" TO NOW]"+queryFilter+"&format=json&start="+i*maxrows+"&rows="+maxrows+"&orderby=beginposition asc" :
+                    "search?q=beginposition:["+beginPosition+" TO NOW]&format=json&start="+i*maxrows+"&rows="+maxrows+"&orderby=beginposition asc";
+            queryUrl = baseUrl + query;
+            ResponseEntity<Results> response = template.exchange(queryUrl, HttpMethod.GET, null, Results.class);
             Results entity = response.getBody();
-            logger.debug("query: "+ query);
+            logger.debug("query: "+ queryUrl);
 
 
             String sqlInsert = "INSERT INTO download_products(\n" +
@@ -363,4 +370,5 @@ public class DHuSProductDownloader {
         }
         httpConn.disconnect();
     }
+
 }
