@@ -90,7 +90,7 @@ public class DownloaderInit implements CommandLineRunner {
                 Thread thread = new Thread(runnable);
                 thread.start();
             }
-            dhusDownloader.downloadScheduler();
+            //dhusDownloader.downloadScheduler();
 
 
             //TEST ONLY BEGIN

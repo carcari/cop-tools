@@ -12,6 +12,7 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.javaswift.joss.instructions.UploadInstructions;
 import org.javaswift.joss.model.Account;
 import org.javaswift.joss.model.Container;
 import org.javaswift.joss.model.StoredObject;
@@ -43,6 +44,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.*;
 
 @Service
 public class DHuSProductDownloader {
@@ -83,7 +85,12 @@ public class DHuSProductDownloader {
     @Value("${dhus.product.downloader.filter}")
     private String queryFilter;
 
+    @Value("${dhus.product.downloader.concurrent.download}")
+    private int concurrentDownload;
+
     private static final int BUFFER_SIZE = 4096;
+
+    private static int downloadCounter = 0;
 
     private static final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("YYYY-MM-DD HH:mm:ss");//yyyy-mm-dd hh:mm:ss[.fffffffff]
 
@@ -95,6 +102,18 @@ public class DHuSProductDownloader {
         } catch (Exception e ){
             logger.error("Error clearing pending products " + e.getMessage());
         }
+    }
+
+    private synchronized int getDownloadCounter() {
+        return this.downloadCounter;
+    }
+
+    private synchronized void incrementDownloadCounter() {
+        this.downloadCounter++;
+    }
+
+    private synchronized void decrementDownloadCounter() {
+        this.downloadCounter--;
     }
 
 
@@ -275,16 +294,19 @@ public class DHuSProductDownloader {
                 " order by sensing_date  asc LIMIT 1 FOR UPDATE;";
         List<Map<String, Object>> products = jdbcTemplate.queryForList(sqlSelect);
         logger.info("- downloadScheduler: retrieved #"+products.size()+" products");
-        Account account = storageAccount.createAccount();
-        for (Map<String, Object> row : products) {
 
-            DownloadProduct p = new DownloadProduct();
-            p.setId(row.get("id").toString());
-            p.setBeginPosition(row.get("begin_position").toString());
-            p.setMission(row.get("mission").toString());
-            p.setName(row.get("name").toString());
-            uploadFileOnStorage(p, account);
-        }
+        if(products.size() > 0) {
+            for (Map<String, Object> row : products) {
+
+                DownloadProduct p = new DownloadProduct();
+                p.setId(row.get("id").toString());
+                p.setBeginPosition(row.get("begin_position").toString());
+                p.setMission(row.get("mission").toString());
+                p.setName(row.get("name").toString());
+                uploadFileOnStorage(p);
+            }
+        } else
+            uploadFileOnStorage(null);
 
 
     }
@@ -294,81 +316,113 @@ public class DHuSProductDownloader {
      * @throws IOException
      */
     @Async
-    public void uploadFileOnStorage(DownloadProduct product, Account account)
+    public void uploadFileOnStorage(DownloadProduct product)
             throws IOException {
-        String productUrl=baseUrl + "odata/v1/Products('" + product.getId() + "')/$value";
-        URL url = new URL(productUrl);
-        logger.debug("property url is: " + productUrl);
-        String sqlStartUpdate = "UPDATE download_products set download_startdate=now(), status='PROCESSING' WHERE id = ? and name = ?";
-        String sqlEndUpdate = "UPDATE download_products set download_enddate=now(), status= ? WHERE id = ? and name = ?";
-        HttpURLConnection httpConn = (HttpURLConnection) url.openConnection();
-        String userpass = username + ":" + password;
-        String basicAuth = "Basic " + new String(new Base64().encode(userpass.getBytes()));
-        httpConn.setRequestProperty ("Authorization", basicAuth);
+        Account account = storageAccount.createAccount();
 
-        int responseCode = httpConn.getResponseCode();
+        Callable<String> task = () -> {
+            if (product == null)
+                return "STOP";
+            incrementDownloadCounter();
+            String result;
+            String productUrl = baseUrl + "odata/v1/Products('" + product.getId() + "')/$value";
+            URL url = new URL(productUrl);
+            logger.debug("property url is: " + productUrl);
+            String sqlStartUpdate = "UPDATE download_products set download_startdate=now(), status='PROCESSING' WHERE id = ? and name = ?";
+            String sqlEndUpdate = "UPDATE download_products set download_enddate=now(), status= ? WHERE id = ? and name = ?";
+            HttpURLConnection httpConn = (HttpURLConnection) url.openConnection();
+            String userpass = username + ":" + password;
+            String basicAuth = "Basic " + new String(new Base64().encode(userpass.getBytes()));
+            httpConn.setRequestProperty("Authorization", basicAuth);
 
-        // always check HTTP response code first
-        if (responseCode == HttpURLConnection.HTTP_OK) {
-            String fileName = "";
-            String disposition = httpConn.getHeaderField("Content-Disposition");
-            //String contentType = httpConn.getContentType();
-            int contentLength = httpConn.getContentLength();
+            int responseCode = httpConn.getResponseCode();
 
-            if (disposition != null) {
-                // extracts file name from header field
-                int index = disposition.indexOf("filename=");
-                if (index > 0) {
-                    fileName = disposition.substring(index + 10,
-                            disposition.length() - 1);
+            // always check HTTP response code first
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                String fileName = "";
+                String disposition = httpConn.getHeaderField("Content-Disposition");
+                //String contentType = httpConn.getContentType();
+                int contentLength = httpConn.getContentLength();
+
+                if (disposition != null) {
+                    // extracts file name from header field
+                    int index = disposition.indexOf("filename=");
+                    if (index > 0) {
+                        fileName = disposition.substring(index + 10,
+                                disposition.length() - 1);
+                    }
+                } else {
+                    // extracts file name from URL
+                    fileName = productUrl.substring(productUrl.lastIndexOf("/") + 1,
+                            productUrl.length());
                 }
-            } else {
-                // extracts file name from URL
-                fileName = productUrl.substring(productUrl.lastIndexOf("/") + 1,
-                        productUrl.length());
-            }
-            String containerName = (containerFormat.equalsIgnoreCase("dotted")) ? product.getMission() + "-"+product.getBeginPosition() : product.getMission();
-            //logger.debug("Content-Type = " + contentType);
-            //logger.debug("Content-Disposition = " + disposition);
-            logger.debug("Content-Length = " + contentLength);
-            logger.debug("fileName = " + fileName);
+                String containerName = (containerFormat.equalsIgnoreCase("dotted")) ? product.getMission() + "-" + product.getBeginPosition() : product.getMission();
+                //logger.debug("Content-Type = " + contentType);
+                //logger.debug("Content-Disposition = " + disposition);
+                logger.debug("Content-Length = " + contentLength);
+                logger.debug("fileName = " + fileName);
 
-            // opens input stream from the HTTP connection
-            InputStream inputStream = httpConn.getInputStream();
-            //Create Object Storage Container if it not exists
-            Container container = account.getContainer(containerName);
-            if(!container.exists())
-                container.create();
-            //Create Object
+                // opens input stream from the HTTP connection
+                InputStream inputStream = httpConn.getInputStream();
+                //Create Object Storage Container if it not exists
+                Container container = account.getContainer(containerName);
+                if (!container.exists())
+                    container.create();
+                //Create Object
 
-            String objName = (containerFormat.equalsIgnoreCase("dotted")) ? fileName
-                    : product.getBeginPosition().substring(0,4) + "/" + product.getBeginPosition().substring(5,7) + "/" + fileName;
-            StoredObject obj = container.getObject(objName);
-            //upload object on storage
-            if(!obj.exists()) {
-                try {
-                    logger.info("Starting uploading object " + objName + " on storage");
-                    jdbcTemplate.update(sqlStartUpdate, product.getId(), product.getName());
-                    obj.uploadObject(inputStream);
+                String objName = (containerFormat.equalsIgnoreCase("dotted")) ? fileName
+                        : product.getBeginPosition().substring(0, 4) + "/" + product.getBeginPosition().substring(5, 7) + "/" + fileName;
+                StoredObject obj = container.getObject(objName);
+                //upload object on storage
+                if (!obj.exists()) {
+                    try {
+                        logger.info("Starting uploading object " + objName + " on storage");
+                        jdbcTemplate.update(sqlStartUpdate, product.getId(), product.getName());
+                        obj.uploadObject(inputStream);
+                        jdbcTemplate.update(sqlEndUpdate, "COMPLETED", product.getId(), product.getName());
+                        result = "Object " + objName + " successfully uploaded on storage";
+                        logger.info(result);
+
+                    } catch (Exception e) {
+                        result = "Error uploading object" + objName + " on storage";
+                        logger.error("Error uploading object" + objName + " on storage", e);
+                    }
+                } else {
                     jdbcTemplate.update(sqlEndUpdate, "COMPLETED", product.getId(), product.getName());
-                    logger.info("Object " + objName + " successfully uploaded on storage");
-
-                } catch(Exception e) {
-                    logger.error("Error uploading object on storage: ",e);
+                    result = "File " + fileName + " already present on storage";
+                    logger.info("File " + fileName + " already present on storage");
                 }
+
+                inputStream.close();
+
+
             } else {
-                jdbcTemplate.update(sqlEndUpdate, "COMPLETED", product.getId(), product.getName());
-                logger.info("File "+ fileName +" already present on storage");
+                result = "\"No file to download. Server replied HTTP code: \" + responseCode";
+                logger.warn("No file to download. Server replied HTTP code: " + responseCode +
+                        "\n Response message is: " + httpConn.getResponseMessage());
             }
+            httpConn.disconnect();
+            decrementDownloadCounter();
+            return result;
+        };
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<String> future = executor.submit(task);
+        logger.debug("download counter is: " + getDownloadCounter());
+        if(getDownloadCounter() == concurrentDownload) {
+            try {
+                String res = future.get();
+                logger.info("TASK TERMINATED _ RESULT IS: " + res);
 
-            inputStream.close();
+            } catch (InterruptedException e) {
 
-
-        } else {
-            logger.warn("No file to download. Server replied HTTP code: " + responseCode +
-                    "\n Response message is: " + httpConn.getResponseMessage());
+            } catch (ExecutionException e) {
+                e.printStackTrace();
+            }
+            logger.info("Shutting down executor... ");
+            executor.shutdownNow();
+            logger.info("Executor shut down... ");
         }
-        httpConn.disconnect();
+
     }
 
 }
